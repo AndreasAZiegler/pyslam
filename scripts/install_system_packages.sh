@@ -114,9 +114,36 @@ if [[ "$OSTYPE" == darwin* ]]; then
 else 
     ## Linux 
 
-    echo "Installing linux packages with apt-get..."    
+    # Check if pixi is activated
+    if [[ -n "$PIXI_PROJECT_NAME" ]]; then
+        PIXI_ACTIVATED=true
+    else
+        PIXI_ACTIVATED=false
+    fi
 
-    sudo apt-get update
+    if [ "$PIXI_ACTIVATED" = true ]; then
+        # Rely on the pixi environment: all the required system libraries are provided by
+        # conda-forge through pixi.toml (compilers, cmake, ninja, eigen, glew, suitesparse,
+        # gtk2, tbb, ffmpeg, protobuf, hdf5, ...). No system packages are required.
+        print_blue "Inside the pixi environment: skipping the system package installation (dependencies are provided by pixi, see pixi.toml)."
+        print_blue "On Arch Linux, make sure the base toolchain is installed first: sudo pacman -S --needed base-devel pkgconf"
+    elif command -v pacman &> /dev/null; then
+        ## Arch Linux
+        echo "Installing linux packages with pacman..."
+        sudo pacman -S --needed --noconfirm \
+            rsync wget unzip \
+            base-devel cmake ninja \
+            sdl2 tk \
+            suitesparse protobuf \
+            ffmpeg glew google-glog \
+            eigen opencv gtk2 \
+            pkgconf python-gobject \
+            lz4 zstd hdf5 \
+            boost tmux qt5-base llvm tbb embree
+    else
+        echo "Installing linux packages with apt-get..."    
+
+        sudo apt-get update
 
     install_package rsync 
     install_package wget
@@ -172,8 +199,9 @@ else
     fi
 
     if [ "$CONDA_INSTALLED" = true ]; then
-        $SCRIPTS_DIR/install_gcc11_if_needed.sh # this won't change your system gcc version!
-    fi
+            $SCRIPTS_DIR/install_gcc11_if_needed.sh # this won't change your system gcc version!
+        fi
+    fi # end of the pixi/pacman/apt branches
 fi
 
 print_blue "System package configuration and installation... Done!" 

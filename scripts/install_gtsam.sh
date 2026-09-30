@@ -148,13 +148,45 @@ if [[ ! -f "$TARGET_GTSAM_LIB" ]]; then
     if [[ "$OSTYPE" == darwin* ]]; then
         GTSAM_OPTIONS+=" -DGTSAM_WITH_TBB=OFF"
     fi 
+
+    # Under pixi the conda gcc links with --sysroot, which hides both /usr/lib and the
+    # pixi env lib dir; let the linker resolve shared deps (e.g. tbb, suitesparse) from the env.
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        GTSAM_PIXI_LIB_DIR=""
+        if [ -d "$ROOT_DIR/.pixi/envs/default/lib" ]; then
+            GTSAM_PIXI_LIB_DIR="$ROOT_DIR/.pixi/envs/default/lib"
+        elif [ -d ".pixi/envs/default/lib" ]; then
+            GTSAM_PIXI_LIB_DIR=".pixi/envs/default/lib"
+        fi
+        if [ -n "$GTSAM_PIXI_LIB_DIR" ]; then
+            GTSAM_OPTIONS="$GTSAM_OPTIONS \
+                -DCMAKE_PREFIX_PATH=$(dirname "$GTSAM_PIXI_LIB_DIR") \
+                -DCMAKE_EXE_LINKER_FLAGS=-Wl,-rpath-link,$GTSAM_PIXI_LIB_DIR \
+                -DCMAKE_SHARED_LINKER_FLAGS=-Wl,-rpath-link,$GTSAM_PIXI_LIB_DIR \
+                -DCMAKE_MODULE_LINKER_FLAGS=-Wl,-rpath-link,$GTSAM_PIXI_LIB_DIR"
+            echo "Added pixi env lib dir to linker search: $GTSAM_PIXI_LIB_DIR"
+        fi
+    fi
     echo GTSAM_OPTIONS: $GTSAM_OPTIONS
     cmake .. -DCMAKE_INSTALL_PREFIX="`pwd`/../install" -DCMAKE_BUILD_TYPE=Release $GTSAM_OPTIONS $EXTERNAL_OPTIONS $MAC_OPTIONS
 	make -j $(nproc)
     make install 
 
     # Now install gtsam python package
-    make python-install 
+    make python-install
+else
+    # The C++ lib is already built, but the python env may have been (re)created in the meantime
+    # (e.g. a fresh pixi env that also ships the conda-forge gtsam bindings). Make sure the
+    # installed gtsam python module is the one built here, otherwise gtsam_factors fails to import
+    # with: 'referenced unknown base type "gtsam::NonlinearFactor"'.
+    LOCAL_GTSAM_PY_LIB=$(ls build/python/gtsam/gtsam*.so 2>/dev/null | head -n 1)
+    INSTALLED_GTSAM_PY_LIB=$("$PYTHON_EXE" -c "import gtsam.gtsam as g; print(g.__file__)" 2>/dev/null)
+    if [[ -n "$LOCAL_GTSAM_PY_LIB" ]] && ! cmp -s "$LOCAL_GTSAM_PY_LIB" "$INSTALLED_GTSAM_PY_LIB"; then
+        print_yellow "The installed gtsam python module is not the local build: reinstalling it"
+        cd build
+        make python-install
+        cd ..
+    fi
 fi
 
 echo current folder: $(pwd)

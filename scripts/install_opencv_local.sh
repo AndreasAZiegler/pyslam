@@ -30,20 +30,32 @@ function print_green(){
 
 function check_package(){
     package_name=$1
-    PKG_OK=$(dpkg-query -W --showformat='${Status}\n' $package_name |grep "install ok installed")
-    #echo "checking for $package_name: $PKG_OK"
-    if [ "" == "$PKG_OK" ]; then
-      #echo "$package_name is not installed"
-      echo 1
+    if command -v pacman &> /dev/null; then
+        if pacman -Q "$package_name" &> /dev/null; then
+            echo 0  # Package is installed
+        else
+            echo 1  # Package is not installed
+        fi
     else
-      echo 0
+        PKG_OK=$(dpkg-query -W --showformat='${Status}\n' $package_name |grep "install ok installed")
+        #echo "checking for $package_name: $PKG_OK"
+        if [ "" == "$PKG_OK" ]; then
+          #echo "$package_name is not installed"
+          echo 1
+        else
+          echo 0
+        fi
     fi
 }
 
 function install_package(){
     do_install=$(check_package $1)
     if [ $do_install -eq 1 ] ; then
-        sudo apt-get install -y $1
+        if command -v pacman &> /dev/null; then
+            sudo pacman -S --needed --noconfirm $1
+        else
+            sudo apt-get install -y $1
+        fi
     fi 
 }
 
@@ -86,7 +98,15 @@ function get_cuda_arch_bin(){
     # It uses nvcc --list-gpu-arch which is the most reliable method
     
     local arch_bin=""
-    
+
+    # Method 0: Explicitly requested architectures (e.g. in docker, where no GPU is visible at build time).
+    # Accepts CUDA_ARCH_BIN or TORCH_CUDA_ARCH_LIST (e.g. "8.6;12.0+PTX" -> "8.6 12.0").
+    local requested_arch="${CUDA_ARCH_BIN:-$TORCH_CUDA_ARCH_LIST}"
+    if [ -n "$requested_arch" ]; then
+        echo "$requested_arch" | sed 's/+PTX//g; s/[;,]/ /g' | xargs
+        return 0
+    fi
+
     # Method 1: Use nvcc --list-gpu-arch (most reliable - returns what the CUDA toolkit actually supports)
     if command -v nvcc &> /dev/null; then
         local nvcc_output=$(nvcc --list-gpu-arch 2>/dev/null)
@@ -102,10 +122,10 @@ function get_cuda_arch_bin(){
                 fi
                 
                 if [ -n "$arch" ]; then
-                    # Convert to decimal format (e.g., 75 -> 7.5, 86 -> 8.6)
-                    if [ ${#arch} -eq 2 ]; then
-                        local major="${arch:0:1}"
-                        local minor="${arch:1:1}"
+                    # Convert to decimal format (e.g., 75 -> 7.5, 86 -> 8.6, 120 -> 12.0)
+                    if [ ${#arch} -ge 2 ]; then
+                        local major="${arch:0:${#arch}-1}"
+                        local minor="${arch: -1}"
                         arch_bin="${arch_bin}${major}.${minor} "
                     fi
                 fi
@@ -189,7 +209,7 @@ print_blue  "Configuring and building $TARGET_FOLDER/opencv ..."
 pip3 uninstall -y opencv-python
 pip3 uninstall -y opencv-contrib-python
 
-pip3 install --upgrade numpy
+pip3 install "numpy<2"   # pySLAM requires numpy<2 (an upgrade would pull numpy 2.x)
 
 #set -e
 
@@ -228,7 +248,18 @@ fi
 #export CUDA_VERSION="cuda-11.8"  # must be an installed CUDA path in /usr/local; 
                                   # if available, you can use the simple path "/usr/local/cuda" which should be a symbolic link to the last installed cuda version 
 CUDA_ON=ON
-if [[ -n "$CUDA_VERSION" ]]; then
+# NOTE: under pixi, the CUDA toolkit is provided by the pixi environment (see pixi.toml:
+# cuda-compiler/cuda-toolkit 12.8). When a pixi CUDA toolkit is available, it takes
+# precedence over the system one installed under /usr/local.
+if [ "$PIXI_ACTIVATED" = true ] && [ -n "$PIXI_NVCC" ] && [ -f "$PIXI_NVCC" ]; then
+    CUDA_VERSION=$("$PIXI_NVCC" --version | grep "release" | awk '{print $5}' | sed 's/,//')
+    if [ -n "$CUDA_VERSION" ]; then
+        print_blue "Using the pixi CUDA toolkit: $PIXI_NVCC (version $CUDA_VERSION, root: $PIXI_CUDA_ROOT)"
+        echo using CUDA $CUDA_VERSION
+    else
+        print_yellow "Warning: could not detect the version of the pixi CUDA toolkit at $PIXI_NVCC (CUDA remains enabled)."
+    fi
+elif [[ -n "$CUDA_VERSION" && "$CUDA_VERSION" != "0" ]]; then
     CUDA_VERSION=$(get_usable_cuda_version $CUDA_VERSION)
     echo using CUDA $CUDA_VERSION
 	if [ ! -d /usr/local/$CUDA_VERSION ]; then 
@@ -250,7 +281,7 @@ fi
 echo CUDA_ON: $CUDA_ON
 
 # Detect CUDA architectures automatically
-CUDA_ARCH_BIN=""
+CUDA_ARCH_BIN="${CUDA_ARCH_BIN:-}"  # can be preset from the environment (see get_cuda_arch_bin)
 if [[ "$CUDA_ON" == "ON" ]]; then
     print_blue "Detecting CUDA compute architectures..."
     CUDA_ARCH_BIN=$(get_cuda_arch_bin)
@@ -290,6 +321,17 @@ fi
 
 if [[ ! -d "$TARGET_FOLDER/opencv" ]]; then
     if [[ $version != *"darwin"* ]]; then
+        if [ "$PIXI_ACTIVATED" = true ]; then
+            # Rely on the pixi environment: glew, eigen, tbb, gtk2, ffmpeg, protobuf,
+            # pkg-config, zlib, libjpeg/libpng/libtiff, ... are provided by conda-forge (see pixi.toml).
+            print_blue "Skipping system package installation: opencv build dependencies are provided by the pixi environment (see pixi.toml)."
+        elif command -v pacman &> /dev/null; then
+            # Arch Linux: install the opencv build dependencies with pacman
+            sudo pacman -S --needed --noconfirm \
+                pkgconf glew libtiff libjpeg-turbo zlib eigen tbb gtk2 openblas \
+                curl unzip icu base-devel cmake \
+                ffmpeg protobuf
+        else
         sudo apt-get update
         sudo apt-get install -y pkg-config libglew-dev libtiff5-dev zlib1g-dev libjpeg-dev libeigen3-dev libtbb-dev libgtk2.0-dev libopenblas-dev libgtk-3-dev
         sudo apt-get install -y curl software-properties-common unzip
@@ -367,6 +409,7 @@ if [[ ! -d "$TARGET_FOLDER/opencv" ]]; then
                 fi
             fi
         fi        
+        fi   # end of the Debian/Ubuntu apt branch (pixi/Arch handled above)
     else
         brew install pkg-config 
         brew install glew
@@ -423,32 +466,79 @@ if [ "$PIXI_ACTIVATED" = true ]; then
         echo "OpenGL is disabled in pixi - skipping OpenGL library detection"
     fi
 
-    # Fix compiler issues in pixi: unset conda-style compiler variables and use system compilers
+    # Use the pixi conda-forge compilers (gcc/gxx) when available, so the OpenCV build
+    # (in particular the CUDA compilation with nvcc 12.8) does not depend on the system
+    # gcc/g++ (e.g. on Arch Linux, whose gcc is too recent for nvcc 12.8).
+    # The compilers are provided by `compilers` (gcc_linux-64/gxx_linux-64, pinned to 12.4)
+    # in pixi.toml; the detectors live in pixi_cuda_config.sh (PIXI_GCC/PIXI_GXX).
+    # System compilers are only used as a fallback when the pixi ones are missing.
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        # Unset any conda-style compiler variables that pixi might have set
-        unset CC CXX CFLAGS CXXFLAGS LDFLAGS CPPFLAGS CONDA_BUILD_SYSROOT CONDA_BUILD_CROSS_COMPILATION
+        # Unset compiler flag variables that pixi/conda might have set
+        unset CFLAGS CXXFLAGS LDFLAGS CPPFLAGS CONDA_BUILD_CROSS_COMPILATION
         
-        # Find system compilers
-        SYSTEM_CC=$(which gcc 2>/dev/null || echo "/usr/bin/gcc")
-        SYSTEM_CXX=$(which g++ 2>/dev/null || echo "/usr/bin/g++")
-        
-        # Verify compilers exist
-        if [ ! -f "$SYSTEM_CC" ]; then
-            print_red "Warning: System gcc not found at $SYSTEM_CC. Trying to find alternative..."
-            SYSTEM_CC=$(find /usr/bin /usr/local/bin -name gcc 2>/dev/null | head -n 1)
-        fi
-        if [ ! -f "$SYSTEM_CXX" ]; then
-            print_red "Warning: System g++ not found at $SYSTEM_CXX. Trying to find alternative..."
-            SYSTEM_CXX=$(find /usr/bin /usr/local/bin -name g++ 2>/dev/null | head -n 1)
-        fi
-        
-        if [ -f "$SYSTEM_CC" ] && [ -f "$SYSTEM_CXX" ]; then
-            PIXI_OPTIONS="$PIXI_OPTIONS -DCMAKE_C_COMPILER=$SYSTEM_CC -DCMAKE_CXX_COMPILER=$SYSTEM_CXX"
-            echo "Using system compilers for pixi: CC=$SYSTEM_CC, CXX=$SYSTEM_CXX"
+        if [ -n "$PIXI_GCC" ] && [ -x "$PIXI_GCC" ] && [ -n "$PIXI_GXX" ] && [ -x "$PIXI_GXX" ]; then
+            # Use the pixi conda-forge compilers
+            export CC="$PIXI_GCC" CXX="$PIXI_GXX"
+            PIXI_OPTIONS="$PIXI_OPTIONS -DCMAKE_C_COMPILER=$PIXI_GCC -DCMAKE_CXX_COMPILER=$PIXI_GXX"
+            echo "Using pixi conda-forge compilers for OpenCV build: CC=$PIXI_GCC, CXX=$PIXI_GXX"
+            echo "  gcc version: $($PIXI_GCC --version | head -n 1)"
         else
-            print_red "Error: Could not find system compilers (gcc/g++). Please install build-essential."
-            exit 1
+            # Fallback: find and use the system compilers
+            unset CC CXX CONDA_BUILD_SYSROOT
+            
+            # Find system compilers
+            SYSTEM_CC=$(which gcc 2>/dev/null || echo "/usr/bin/gcc")
+            SYSTEM_CXX=$(which g++ 2>/dev/null || echo "/usr/bin/g++")
+            
+            # Verify compilers exist
+            if [ ! -f "$SYSTEM_CC" ]; then
+                print_red "Warning: System gcc not found at $SYSTEM_CC. Trying to find alternative..."
+                SYSTEM_CC=$(find /usr/bin /usr/local/bin -name gcc 2>/dev/null | head -n 1)
+            fi
+            if [ ! -f "$SYSTEM_CXX" ]; then
+                print_red "Warning: System g++ not found at $SYSTEM_CXX. Trying to find alternative..."
+                SYSTEM_CXX=$(find /usr/bin /usr/local/bin -name g++ 2>/dev/null | head -n 1)
+            fi
+            
+            if [ -f "$SYSTEM_CC" ] && [ -f "$SYSTEM_CXX" ]; then
+                PIXI_OPTIONS="$PIXI_OPTIONS -DCMAKE_C_COMPILER=$SYSTEM_CC -DCMAKE_CXX_COMPILER=$SYSTEM_CXX"
+                echo "Using system compilers for pixi: CC=$SYSTEM_CC, CXX=$SYSTEM_CXX"
+            else
+                print_red "Error: Could not find system compilers (gcc/g++). Please install build-essential."
+                exit 1
+            fi
         fi
+
+        # The conda gcc links with --sysroot, which hides both /usr/lib and the pixi env
+        # lib dir; let the linker resolve OpenCV's shared deps (e.g. libz, libstdc++,
+        # cudart) from the pixi env at build/link time.
+        PIXI_LIB_DIR=""
+        if [ -d "$ROOT_DIR/.pixi/envs/default/lib" ]; then
+            PIXI_LIB_DIR="$ROOT_DIR/.pixi/envs/default/lib"
+        elif [ -d ".pixi/envs/default/lib" ]; then
+            PIXI_LIB_DIR=".pixi/envs/default/lib"
+        fi
+        if [ -n "$PIXI_LIB_DIR" ]; then
+            PIXI_OPTIONS="$PIXI_OPTIONS \
+                -DCMAKE_PREFIX_PATH=$(dirname "$PIXI_LIB_DIR") \
+                -DCMAKE_EXE_LINKER_FLAGS=-Wl,-rpath-link,$PIXI_LIB_DIR \
+                -DCMAKE_SHARED_LINKER_FLAGS=-Wl,-rpath-link,$PIXI_LIB_DIR \
+                -DCMAKE_MODULE_LINKER_FLAGS=-Wl,-rpath-link,$PIXI_LIB_DIR"
+            echo "Added pixi env lib dir to linker search: $PIXI_LIB_DIR"
+        fi
+    fi
+
+    # Force the pixi HDF5 (for the opencv_contrib hdf module). The conda-forge hdf5 package ships
+    # no CMake config file, so FindHDF5 would otherwise pick up the system one (e.g. Arch's
+    # /usr/lib64/cmake/hdf5) and libopencv_hdf would link against a system libhdf5 that is
+    # ABI-incompatible with the pixi one (undefined H5* references when linking against OpenCV).
+    PIXI_ENV_PREFIX="$ROOT_DIR/.pixi/envs/default"
+    if [ -x "$PIXI_ENV_PREFIX/bin/h5cc" ]; then
+        PIXI_OPTIONS="$PIXI_OPTIONS \
+            -DHDF5_ROOT=$PIXI_ENV_PREFIX \
+            -DHDF5_NO_FIND_PACKAGE_CONFIG_FILE=ON \
+            -DHDF5_C_COMPILER_EXECUTABLE=$PIXI_ENV_PREFIX/bin/h5cc"
+        echo "Using pixi HDF5: $PIXI_ENV_PREFIX"
     fi
 
     # Fix Python detection in pixi: use pixi's Python instead of system Python
@@ -608,6 +698,7 @@ if [ ! -f $OPENCV_CORE_LIB ]; then
           -DCMAKE_INSTALL_PREFIX="`pwd`/../install" \
           -DOPENCV_EXTRA_MODULES_PATH="`pwd`/../opencv_contrib-$OPENCV_VERSION/modules" \
           -DWITH_FFMPEG=ON \
+          -DWITH_AVIF=OFF \
           -DWITH_QT=$WITH_QT \
           -DWITH_GTK=$WITH_GTK \
           -DWITH_OPENGL=$WITH_OPENGL \

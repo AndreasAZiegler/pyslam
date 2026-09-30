@@ -60,6 +60,32 @@ This script will prepare the pixi-dedicated `pyslam` environment, and build the 
 Once you have activate the pixi shell in your terminal, you're ready to run any main script.
 
 
+### Arch Linux
+
+The pixi flow relies on the pixi environment (see `pixi.toml`) instead of installing system packages, so no `pacman`/`apt` packages are required for the build itself.
+
+The C/C++ compiler used by the build (including the OpenCV CUDA compilation with nvcc 12.8) is the conda-forge toolchain shipped in the pixi environment: `gcc_linux-64`/`gxx_linux-64`, pinned to `12.4.*` (a version supported by nvcc 12.8). The system `gcc`/`g++` is only used as a fallback if the pixi compilers are missing.
+
+The conda-forge linker always runs with `--sysroot=<env>/x86_64-conda-linux-gnu/sysroot`, which hides both `/usr/lib` and the pixi env `lib/` from the default library search. The OpenCV and thirdparty build scripts therefore explicitly add the pixi env lib dir to the link path (`-DCMAKE_*_LINKER_FLAGS=-Wl,-rpath-link,$PIXI_LIB_DIR` plus `-DCMAKE_PREFIX_PATH`), so shared dependencies such as `libz.so.1` resolve from the pixi environment instead of the system.
+
+Before running the install script, make sure the base toolchain is present:
+
+```bash
+sudo pacman -S --needed base-devel pkgconf
+# optional, if you use an NVIDIA GPU (pixi.toml requires CUDA 12.8):
+sudo pacman -S --needed nvidia nvidia-utils
+```
+
+Then follow the standard flow:
+
+```bash
+pixi shell
+./install_all.sh
+```
+
+If the script complains that the pixi environment is not activated (e.g. `USE_PIXI=1` is set in `.env`), activate it with `pixi shell` and re-run `./install_all.sh`.
+
+
 --- 
 
 ## Pixi primer

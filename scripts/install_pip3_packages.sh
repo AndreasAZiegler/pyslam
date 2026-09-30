@@ -82,7 +82,12 @@ if [[ "$OSTYPE" != "darwin"* ]]; then
     # for crestereo
     # Unfortunately, megengine is not supported on macOS with arm architecture
     pip install --upgrade cryptography pyOpenSSL
-    python3 -m pip install megengine -f https://megengine.org.cn/whl/mge.html
+    # NOTE: the megengine wheel index (https://megengine.org.cn/whl/mge.html) may be unreachable (e.g. expired SSL
+    # certificate or removed index). megengine is optional: `DepthEstimatorCrestereoPytorch` is a working alternative.
+    if ! python3 -m pip install megengine -f https://megengine.org.cn/whl/mge.html; then
+        print_yellow "WARNING: could not install megengine (optional). DepthEstimatorCrestereoMegengine will not be available;"
+        print_yellow "         use DepthEstimatorCrestereoPytorch instead, or build it from source with: $SCRIPTS_DIR/install_megengine.sh"
+    fi
     #pip install megengine  # This brings issues with non-supported CUDA architecture on my machine
     # NOTE: if you do not succeed in installing megengine in your system with the pre-built wheels, you can try to install it from source with the following command:
     #   $SCRIPTS_DIR/install_megengine.sh    
@@ -110,11 +115,13 @@ else
     print_yellow "Skipping MonoGS since CUDA_VERSION is 0"
 fi 
 
-# Install tesorflow and related packages
-pip install tensorflow==2.13
-pip install tensorflow_hub  # required by VPR
-pip install tf_slim==1.1.0
-pip install protobuf==3.20.3 --force-reinstall # delf
+# Install tensorflow and related packages in a single resolve (tensorflow_hub is required by VPR).
+# NOTE: tensorflow==2.13 is not compatible with the rest of the stack (it pins typing-extensions<4.6
+# and numpy<=1.24.3, while torch>=2.9 needs typing-extensions>=4.10), and tensorflow_hub/tf-keras
+# upgraded it to the latest TF anyway. pyslam only uses tf.compat.v1, which works with TF 2.16+.
+# protobuf is left to TF's requirement (see install_protobuf.sh); the delf protos are generated with
+# protoc 3.20, which newer protobuf runtimes support.
+pip install "tensorflow>=2.16,<2.22" tf_keras tensorflow_hub "tf_slim==1.1.0" "numpy<2"
 
 pip3 install -U imgviz
 

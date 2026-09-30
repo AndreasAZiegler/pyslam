@@ -91,13 +91,36 @@ fi
 if [ "$CUDA_VERSION" != "0" ] && [ -n "$CUDA_VERSION_STRING_WITH_HYPHENS" ]; then
     print_blue "Checking the nvidia toolkit ..."
     
-    # Check if package is already installed to avoid unnecessary operations
-    if dpkg -l | grep -q "cuda-toolkit-$CUDA_VERSION_STRING_WITH_HYPHENS"; then
-        print_blue "cuda-toolkit-$CUDA_VERSION_STRING_WITH_HYPHENS is already installed"
+    if [[ -n "$PIXI_PROJECT_NAME" ]] || [[ -n "$CONDA_PREFIX" ]]; then
+        # Inside a pixi/conda environment we rely on the CUDA toolkit provided by the
+        # environment itself (see pixi.toml) instead of installing system packages.
+        print_blue "Inside a conda/pixi environment: skipping the system nvidia toolkit installation."
         INSTALL_CUDA_TOOLKIT_STATUS=0
+    elif command -v pacman &> /dev/null; then
+        # Arch Linux: the CUDA toolkit is shipped as the `cuda` package
+        if pacman -Q cuda &> /dev/null; then
+            print_blue "cuda is already installed"
+            INSTALL_CUDA_TOOLKIT_STATUS=0
+        else
+            print_yellow "CUDA toolkit is not installed on the system."
+            print_yellow "When using pixi, the CUDA toolkit is provided by the pixi environment (see pixi.toml)."
+            print_yellow "If you need a system toolkit on Arch Linux, install it with: sudo pacman -S --needed cuda"
+            INSTALL_CUDA_TOOLKIT_STATUS=0  # not fatal: under pixi the toolkit comes from the environment
+        fi
+    elif command -v dpkg &> /dev/null; then
+        # Debian/Ubuntu
+        # Check if package is already installed to avoid unnecessary operations
+        if dpkg -l | grep -q "cuda-toolkit-$CUDA_VERSION_STRING_WITH_HYPHENS"; then
+            print_blue "cuda-toolkit-$CUDA_VERSION_STRING_WITH_HYPHENS is already installed"
+            INSTALL_CUDA_TOOLKIT_STATUS=0
+        else
+            sudo apt-get install -y cuda-toolkit-$CUDA_VERSION_STRING_WITH_HYPHENS
+            INSTALL_CUDA_TOOLKIT_STATUS=$?  # Store the exit status of the last command (apt-get install)
+        fi
     else
-        sudo apt-get install -y cuda-toolkit-$CUDA_VERSION_STRING_WITH_HYPHENS
-        INSTALL_CUDA_TOOLKIT_STATUS=$?  # Store the exit status of the last command (apt-get install)
+        print_yellow "Unsupported package manager: skipping the system nvidia toolkit installation."
+        print_yellow "When using pixi, the CUDA toolkit is provided by the pixi environment (see pixi.toml)."
+        INSTALL_CUDA_TOOLKIT_STATUS=0
     fi
     
     if [ $INSTALL_CUDA_TOOLKIT_STATUS -ne 0 ]; then
@@ -115,10 +138,14 @@ if [ "$CUDA_VERSION" != "0" ] && [ -n "$CUDA_VERSION_STRING_WITH_HYPHENS" ]; the
         print_blue "Checking the package nvidia-cuda-dev ..."
         # If the installation of cuda-toolkit failed, then install nvidia-cuda-dev to avoid the issue "Fatal error: cuda.h: No such file or directory"
         # This problem seems to be critical under CUDA 12.8
-        if dpkg -l | grep -q "nvidia-cuda-dev"; then
-            print_blue "nvidia-cuda-dev is already installed"
+        if command -v dpkg &> /dev/null; then
+            if dpkg -l | grep -q "nvidia-cuda-dev"; then
+                print_blue "nvidia-cuda-dev is already installed"
+            else
+                sudo apt-get install -y nvidia-cuda-dev 
+            fi
         else
-            sudo apt-get install -y nvidia-cuda-dev 
+            print_yellow "Skipping nvidia-cuda-dev (dpkg/apt not available on this system)"
         fi
     fi
 

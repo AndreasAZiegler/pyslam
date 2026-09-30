@@ -38,7 +38,16 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     print_yellow "Skipping xformers on macOS (optional for ODISE; not supported by Apple clang)"
 elif ! python3 -c "import xformers" 2>/dev/null; then
     print_blue "Installing optional xformers for ODISE..."
-    pip install --no-build-isolation "xformers>=0.0.16" || \
+    # Pin torch to the installed version: otherwise pip picks the latest xformers, which pulls
+    # in a newer torch (and a different CUDA stack) and breaks the installed torch/torchvision.
+    # NOTE: strip the local version label (e.g. "+cu128"): it is not on PyPI, while "torch==X.Y.Z"
+    # is still satisfied by the installed "X.Y.Z+cu128" build.
+    TORCH_VERSION=$(python3 -c "import torch; print(torch.__version__.split('+')[0])" 2>/dev/null)
+    TORCH_PIN=""
+    if [ -n "$TORCH_VERSION" ]; then
+        TORCH_PIN="torch==$TORCH_VERSION"
+    fi
+    pip install --no-build-isolation "xformers>=0.0.16" $TORCH_PIN || \
         print_yellow "xformers install failed (optional for ODISE; inference still works without it)"
 fi
 

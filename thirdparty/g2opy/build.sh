@@ -9,8 +9,15 @@ if [ ! -d $1 ]; then
 fi
 }
 
+# Under pixi, suitesparse/eigen/python headers are provided by the pixi environment (see pixi.toml).
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    sudo apt-get install -y libsuitesparse-dev libeigen3-dev python3-dev
+    if [[ -n "$PIXI_PROJECT_NAME" ]]; then
+        echo "Pixi environment detected: skipping system package installation for g2opy dependencies."
+    elif command -v pacman &> /dev/null; then
+        sudo pacman -S --needed --noconfirm suitesparse eigen
+    else
+        sudo apt-get install -y libsuitesparse-dev libeigen3-dev python3-dev
+    fi
 fi   
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then

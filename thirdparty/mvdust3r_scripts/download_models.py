@@ -6,10 +6,11 @@ from tqdm import tqdm
 
 # Define files to download
 files = {
-    "DUSt3R_ViTLarge_BaseDecoder_224_linear.pth": "https://huggingface.co/Zhenggang/MV-DUSt3R/resolve/main/checkpoints/DUSt3R_ViTLarge_BaseDecoder_224_linear.pth",
     "MVD.pth": "https://huggingface.co/Zhenggang/MV-DUSt3R/resolve/main/checkpoints/MVD.pth",
-    "MVDp_s1.pth": "https://huggingface.co/Zhenggang/MV-DUSt3R/resolve/main/checkpoints/MVDp_s1.pth",
-    "MVDp_s2.pth": "https://huggingface.co/Zhenggang/MV-DUSt3R/resolve/main/checkpoints/MVDp_s2.pth",  # ✅ fixed link
+    # NOTE: pySLAM only uses MVD.pth. The other checkpoints (~18 GB) can be re-enabled if needed.
+    # "DUSt3R_ViTLarge_BaseDecoder_224_linear.pth": "https://huggingface.co/Zhenggang/MV-DUSt3R/resolve/main/checkpoints/DUSt3R_ViTLarge_BaseDecoder_224_linear.pth",
+    # "MVDp_s1.pth": "https://huggingface.co/Zhenggang/MV-DUSt3R/resolve/main/checkpoints/MVDp_s1.pth",
+    # "MVDp_s2.pth": "https://huggingface.co/Zhenggang/MV-DUSt3R/resolve/main/checkpoints/MVDp_s2.pth",  # ✅ fixed link
 }
 
 def download_with_progress(filename, url):

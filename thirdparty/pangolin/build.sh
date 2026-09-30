@@ -36,6 +36,25 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     echo "Using MAC_OPTIONS for opencv build: $MAC_OPTIONS"
 fi
 
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    # Under pixi the conda gcc links with --sysroot, which hides both /usr/lib and the
+    # pixi env lib dir; let the linker resolve shared deps (e.g. libz from the env).
+    PIXI_LIB_DIR=""
+    if [ -d "$SCRIPT_DIR/../../.pixi/envs/default/lib" ]; then
+        PIXI_LIB_DIR="$(readlink -f "$SCRIPT_DIR/../../.pixi/envs/default/lib")"
+    elif [ -d ".pixi/envs/default/lib" ]; then
+        PIXI_LIB_DIR=".pixi/envs/default/lib"
+    fi
+    if [ -n "$PIXI_LIB_DIR" ]; then
+        EXTERNAL_OPTIONS="$EXTERNAL_OPTIONS \
+            -DCMAKE_PREFIX_PATH=$(dirname "$PIXI_LIB_DIR") \
+            -DCMAKE_EXE_LINKER_FLAGS=-Wl,-rpath-link,$PIXI_LIB_DIR \
+            -DCMAKE_SHARED_LINKER_FLAGS=-Wl,-rpath-link,$PIXI_LIB_DIR \
+            -DCMAKE_MODULE_LINKER_FLAGS=-Wl,-rpath-link,$PIXI_LIB_DIR"
+        echo "Added pixi env lib dir to linker search: $PIXI_LIB_DIR"
+    fi
+fi
+
 
 echo "EXTERNAL_OPTIONS: $EXTERNAL_OPTIONS"
 

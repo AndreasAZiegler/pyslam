@@ -42,17 +42,40 @@ else
     PIXI_ACTIVATED=false
 fi
 
+# check if a pixi environment has been created in the repo
+if [ -d "$ROOT_DIR/.pixi" ]; then
+    PIXI_INSTALLED=true
+else
+    PIXI_INSTALLED=false
+fi
+
+# load the local environment file (install_all_pixi.sh sets USE_PIXI=1 in .env)
+if [ -f "$ROOT_DIR/.env" ]; then
+    . "$ROOT_DIR/.env"
+fi
+
 print_blue '================================================'
 print_blue "Installing pySLAM"
 print_blue '================================================'
 
-# check that conda is activated 
-if [ "$CONDA_INSTALLED" = true ]; then
-    print_blue "Installing pySLAM by using conda"
-    . "$SCRIPTS_DIR"/install_all_conda.sh
-elif [ "$PIXI_ACTIVATED" = true ]; then
+# NOTE: when inside a pixi environment, pixi gets the highest priority (even if conda is installed).
+if [ "$PIXI_ACTIVATED" = true ]; then
     print_blue "Installing pySLAM by using pixi"
     . "$SCRIPTS_DIR"/install_all_pixi.sh
+elif [ "$USE_PIXI" = "1" ]; then
+    print_red "pixi is the chosen environment (USE_PIXI=1 is set in $ROOT_DIR/.env) but it is not activated!"
+    print_red "Run the following command and then re-run ./install_all.sh:"
+    print_red "    pixi shell"
+    print_red "If you want to use another environment, remove the file $ROOT_DIR/.env"
+    exit 1
+elif [ "$CONDA_INSTALLED" = true ]; then
+    print_blue "Installing pySLAM by using conda"
+    . "$SCRIPTS_DIR"/install_all_conda.sh
+elif [ "$PIXI_INSTALLED" = true ]; then
+    print_red "A pixi environment has been found in $ROOT_DIR/.pixi but it is not activated!"
+    print_red "Run the following command and then re-run ./install_all.sh:"
+    print_red "    pixi shell"
+    exit 1
 else
     print_blue "Installing pySLAM by using venv"
     . "$SCRIPTS_DIR"/install_all_venv.sh

@@ -31,7 +31,11 @@ if [ ! -d "rf_detr" ]; then
     pip install --upgrade "transformers>=4.41.2" "peft==0.10.0"
 
     # install rf_detr as a package
-    pip install -e .
+    # NOTE: rf_detr pins torch<=2.8.0, which would downgrade the torch that all the CUDA extensions
+    # (and xformers) were built against. Install it without deps and add its remaining deps explicitly
+    # (transformers/peft above; torch/torchvision/numpy are already installed).
+    pip install -e . --no-deps
+    pip install pycocotools scipy tqdm polygraphy rf100vl pydantic supervision matplotlib roboflow "pillow-avif-plugin<1.5.3"
 
     cd ..
 fi

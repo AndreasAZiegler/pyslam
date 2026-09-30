@@ -23,7 +23,7 @@ export ENV_NAME="${1:-pyslam}"  # get the first input if any, otherwise use 'pys
 export PYSLAM_PYTHON_VERSION="${2:-3.11.9}"  # Default Python version
 
 
-ENVS_PATH=~/.python/venvs  # path where to group virtual environments 
+ENVS_PATH=${PYSLAM_VENVS_PATH:-~/.python/venvs}  # path where to group virtual environments 
 ENV_PATH=$ENVS_PATH/$ENV_NAME        # path of the virtual environment we are creating 
 
 # ====================================================
@@ -56,9 +56,9 @@ if [ ! -d $ENV_PATH/bin ]; then
     export PATH="/home/$USER/.pyenv/bin:$PATH"  # this seems to be needed under docker (even if it seems redundant)
     print_blue "Creating virtual environment $ENV_NAME with python version $PYSLAM_PYTHON_VERSION under Linux"
     if [[ $version == *"22.04"* ]] ; then
-        CC=clang pyenv install -v $PYSLAM_PYTHON_VERSION
+        CC=clang pyenv install -s -v $PYSLAM_PYTHON_VERSION
     else
-        pyenv install -v $PYSLAM_PYTHON_VERSION
+        pyenv install -s -v $PYSLAM_PYTHON_VERSION
     fi
     pyenv local $PYSLAM_PYTHON_VERSION
     python3 -m venv $ENV_NAME

@@ -74,7 +74,11 @@ einops = ">=0.8.1,<0.9"
 pyflann = "*"
 faiss = "*"
 trimesh = "*"
-jax = "*"
+# NOTE: jax is intentionally not installed (pyslam does not use it). Keras 3 imports jax whenever it
+# is present, which breaks tf.keras/tensorflow_hub: the conda-forge jaxlib 0.5.x builds request an
+# executable stack (refused by glibc >= 2.41), and the other builds abort with a protobuf descriptor
+# conflict when loaded after the pip tensorflow.
+opt_einsum = "*"  # required by tensorflow (was previously only pulled in through jax)
 munch = "*"
 wandb = "*"
 plyfile = "*"
@@ -124,6 +128,12 @@ tinyxml2 = "*"
 configargparse = "*"
 python-devtools = ">=0.12.2,<0.13"
 
+[target.linux-64.dependencies]
+# conda-forge compilers used to build OpenCV/CUDA (and the other C++ code) instead of the
+# system gcc/g++ (e.g. on Arch Linux). Pinned to a version supported by nvcc 12.8 (gcc <= 14).
+gcc_linux-64 = "12.4.*"
+gxx_linux-64 = "12.4.*"
+
 [tool.pixi.pip-dependencies]
 numba = "*"
 onnxruntime = "*"
@@ -143,3 +153,10 @@ kornia_moons = "==0.2.9"
 
 [system-requirements]
 cuda = "12.8"
+
+[activation.env]
+# The conda-forge cuda-nvcc activation script defaults TORCH_CUDA_ARCH_LIST to a list that
+# contains "10.1", an arch name torch >= 2.9 no longer accepts (renamed to "11.0"): this breaks
+# every torch CUDA extension build (e.g. detectron2) with "Unknown CUDA arch (10.1)".
+# The activation script only sets it when unset, so define a torch-compatible list here.
+TORCH_CUDA_ARCH_LIST = "5.0;5.2;6.0;6.1;7.0;7.5;8.0;8.6;8.9;9.0;10.0;12.0+PTX"

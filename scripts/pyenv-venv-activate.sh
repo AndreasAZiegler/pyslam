@@ -6,7 +6,7 @@
 
 export ENV_NAME=${1:-pyslam}  # default name of the virtual environment is "pyslam"
 
-ENVS_PATH=~/.python/venvs  # path where to group virtual environments 
+ENVS_PATH=${PYSLAM_VENVS_PATH:-~/.python/venvs}  # path where to group virtual environments 
 ENV_PATH=$ENVS_PATH/$ENV_NAME        # path of the virtual environment we are creating 
 
 #export PYTHONPATH=$ENVS_PATH/$ENV_NAME/bin  

@@ -125,6 +125,24 @@ if [ "$PIXI_ACTIVATED" = true ]; then
         echo "[pixi_cuda_config] CUDA compiler: $PIXI_NVCC"
     fi
     
+    # Find the pixi conda-forge compilers (gcc/gxx), provided by the
+    # `compilers` / gcc_linux-64 & gxx_linux-64 packages in pixi.toml.
+    # They are used instead of the system gcc/g++ (e.g. on Arch Linux) so that the
+    # OpenCV CUDA build uses a compiler version supported by nvcc 12.8.
+    PIXI_GCC=""
+    PIXI_GXX=""
+    for _pixi_prefix in "$ROOT_DIR/.pixi/envs/default" ".pixi/envs/default"; do
+        if [ -x "$_pixi_prefix/bin/x86_64-conda-linux-gnu-cc" ]; then
+            PIXI_GCC="$_pixi_prefix/bin/x86_64-conda-linux-gnu-cc"
+            PIXI_GXX="$_pixi_prefix/bin/x86_64-conda-linux-gnu-g++"
+            break
+        fi
+    done
+    if [ -n "$PIXI_GCC" ] && [ -x "$PIXI_GCC" ] && [ -n "$PIXI_GXX" ] && [ -x "$PIXI_GXX" ]; then
+        export PIXI_GCC PIXI_GXX
+        echo "[pixi_cuda_config] Pixi conda-forge compilers: CC=$PIXI_GCC, CXX=$PIXI_GXX ($($PIXI_GCC --version 2>/dev/null | head -n 1))"
+    fi
+    
     # Function to generate CMake options for CUDA
     # Usage: PIXI_CUDA_CMAKE_OPTS=$(get_pixi_cuda_cmake_options)
     get_pixi_cuda_cmake_options() {
@@ -146,6 +164,11 @@ if [ "$PIXI_ACTIVATED" = true ]; then
             opts="$opts -DCMAKE_CUDA_COMPILER=$PIXI_NVCC"
             # Enable CUDA language support
             opts="$opts -DCMAKE_CUDA_STANDARD=17"
+        fi
+        
+        if [ -n "$PIXI_GXX" ] && [ -x "$PIXI_GXX" ]; then
+            # Force nvcc's host compiler to the pixi g++ (nvcc 12.8 rejects newer system gcc)
+            opts="$opts -DCMAKE_CUDA_HOST_COMPILER=$PIXI_GXX"
         fi
         
         if [ -n "$PIXI_CUDA_LIB_DIR" ] && [ -d "$PIXI_CUDA_LIB_DIR" ]; then

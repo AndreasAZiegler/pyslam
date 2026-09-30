@@ -66,18 +66,30 @@ function make_buid_dir(){
 
 function check_package(){
     local package_name="$1"
-    local PKG_OK=$(dpkg-query -W --showformat='${Status}\n' "$package_name" 2>/dev/null | grep "install ok installed")
-
-    if [ -z "$PKG_OK" ]; then
-        echo 1  # Package is not installed
+    if command -v pacman &> /dev/null; then
+        if pacman -Q "$package_name" &> /dev/null; then
+            echo 0  # Package is installed
+        else
+            echo 1  # Package is not installed
+        fi
     else
-        echo 0  # Package is installed
+        local PKG_OK=$(dpkg-query -W --showformat='${Status}\n' "$package_name" 2>/dev/null | grep "install ok installed")
+
+        if [ -z "$PKG_OK" ]; then
+            echo 1  # Package is not installed
+        else
+            echo 0  # Package is installed
+        fi
     fi
 }
 function install_package(){
     do_install=$(check_package $1)
     if [ $do_install -eq 1 ] ; then
-        sudo apt-get install -y $1
+        if command -v pacman &> /dev/null; then
+            sudo pacman -S --needed --noconfirm $1
+        else
+            sudo apt-get install -y $1
+        fi
     fi 
 }
 
