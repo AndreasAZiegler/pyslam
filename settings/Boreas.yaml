@@ -1,0 +1,57 @@
+#--------------------------------------------------------------------------------------------
+# Viewer Parameters
+#--------------------------------------------------------------------------------------------
+# Viewer.on: 1 is ON, 0 is OFF
+Viewer.on: 1
+
+Viewer.KeyFrameSize: 0.6
+Viewer.KeyFrameLineWidth: 2
+Viewer.GraphLineWidth: 1
+Viewer.PointSize: 2
+Viewer.CameraSize: 0.7
+Viewer.CameraLineWidth: 3
+Viewer.ViewpointX: 0
+Viewer.ViewpointY: -100
+Viewer.ViewpointZ: -0.1
+Viewer.ViewpointF: 2000
+
+#--------------------------------------------------------------------------------------------
+# Camera Parameters (Boreas camera0, from calib/camera0_intrinsics.yaml)
+#--------------------------------------------------------------------------------------------
+# These are the intrinsics of the image fed to SLAM, i.e. after BoreasDataset preprocessing with
+# crop_bottom_px: 448 (car hood) and image_scale: 0.5 (see BOREAS_DATASET in config.yaml).
+# Native 2448x2048 calib: fx: 1457.636650597658, fy: 1458.647893481085, cx: 1216.719589359398, cy: 1045.377548505835
+# Scaled as f' = f*s, c' = (c+0.5)*s - 0.5; the bottom crop leaves cx, cy unchanged. Distortion does not scale.
+# If you change crop_bottom_px or image_scale, update the values below (the dataset checks width and height).
+
+# Camera calibration and distortion parameters (OpenCV)
+Camera.fx: 728.818325298829
+Camera.fy: 729.3239467405425
+Camera.cx: 608.109794679699
+Camera.cy: 522.4387742529175
+
+Camera.k1: 0.031971341876134
+Camera.k2: -0.019555671331583
+Camera.p1: 0.0
+Camera.p2: 0.0
+
+Camera.width: 1224
+Camera.height: 800
+
+# Camera frames per second
+Camera.fps: 10.0
+
+# Color order of the images (0: BGR, 1: RGB. It is ignored if images are grayscale)
+Camera.RGB: 1
+
+#--------------------------------------------------------------------------------------------
+# Features extraction
+#--------------------------------------------------------------------------------------------
+
+FeatureTrackerConfig.nFeatures: 2000
+
+#--------------------------------------------------------------------------------------------
+# Matching (Data Association)
+#--------------------------------------------------------------------------------------------
+
+#Matching.farPointsThreshold: 20.0    # meters (to exclude far points from matching when we have an outdoor scene)

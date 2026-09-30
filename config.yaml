@@ -11,7 +11,8 @@ DATASET:
   #type: CLIO_DATASET
   #type: BONN_RGBD_DYNAMIC_DATASET
   #type: ROVER_DATASET  
-  type: VIDEO_DATASET
+  type: BOREAS_DATASET
+  # type: VIDEO_DATASET
   #type: SCANNET_DATASET
   #type: ROS1BAG_DATASET
   #type: ROS2BAG_DATASET
@@ -186,6 +187,19 @@ ROVER_DATASET:
   associations: associations.txt
   groundtruth_file: auto
   environment_type: outdoor
+
+
+BOREAS_DATASET:
+  type: boreas
+  sensor_type: mono # Here, 'sensor_type' can be only 'mono' (Boreas has a single camera)
+  base_path: /data/research/boreas
+  name: 'boreas-2024-12-05-14-12' # sequence folder containing camera/, applanix/, calib/
+  settings: settings/Boreas.yaml
+  groundtruth_file: auto # read from applanix/camera_poses.csv
+  environment_type: outdoor
+  start_frame_id: 0
+  crop_bottom_px: 448 # rows removed from the bottom of the 2448x2048 images (car hood); intrinsics in settings/Boreas.yaml must match
+  image_scale: 0.5 # scale applied after cropping; intrinsics in settings/Boreas.yaml must match
 
 
 VIDEO_DATASET:

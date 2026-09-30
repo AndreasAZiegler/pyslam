@@ -59,6 +59,7 @@ from .dataset import (
     NeuralRGBDDataset,
     ClioDataset,
     RoverDataset,
+    BoreasDataset,
 )
 from .mcap_dataset import McapDataset
 
@@ -248,6 +249,22 @@ def dataset_factory(config: "Config") -> Dataset:
             start_frame_id,
             type=DatasetType.ROVER,
             environment_type=environment_type,
+        )
+    if type == "boreas":
+        cam_settings = config.cam_settings if config.cam_settings is not None else {}
+        image_size = None
+        if "Camera.width" in cam_settings and "Camera.height" in cam_settings:
+            image_size = (cam_settings["Camera.width"], cam_settings["Camera.height"])
+        dataset = BoreasDataset(
+            path,
+            name,
+            sensor_type,
+            start_frame_id,
+            type=DatasetType.BOREAS,
+            environment_type=environment_type,
+            crop_bottom_px=int(dataset_settings.get("crop_bottom_px", 0)),
+            image_scale=float(dataset_settings.get("image_scale", 1.0)),
+            image_size=image_size,
         )
 
     dataset.minimal_config = MinimalDatasetConfig(config=config)

@@ -1744,3 +1744,113 @@ class RoverDataset(Dataset):
             self.is_ok = False
             self._timestamp = None
         return np.ascontiguousarray(img) if img is not None else None
+
+
+def boreas_camera_listing(camera_dir):
+    """Boreas camera images sorted by time, with timestamps in seconds.
+
+    Boreas names camera images by their timestamp in microseconds, e.g. 1733425987695146.png.
+    """
+    stamped_files = []
+    for image_file in glob.glob(os.path.join(camera_dir, "*.png")):
+        stem = os.path.splitext(os.path.basename(image_file))[0]
+        if stem.isdigit():
+            stamped_files.append((int(stem), image_file))
+    stamped_files.sort()
+    files = [f for _, f in stamped_files]
+    timestamps = np.array([t * 1e-6 for t, _ in stamped_files], dtype=np.float64)
+    return files, timestamps
+
+
+# Boreas dataset: https://www.boreas.utias.utoronto.ca/
+# Expected layout: <base_path>/<name>/camera/<timestamp_us>.png
+# Images can be preprocessed before tracking: crop_bottom_px rows are removed from the bottom (the car hood
+# is visible there) and the result is scaled by image_scale. The camera settings file must then contain the
+# intrinsics of the preprocessed image (see settings/Boreas.yaml); image_size (width, height), if given, is
+# checked against the size of the first preprocessed image.
+class BoreasDataset(Dataset):
+    def __init__(
+        self,
+        path,
+        name,
+        sensor_type=SensorType.MONOCULAR,
+        start_frame_id=0,
+        type=DatasetType.BOREAS,
+        environment_type=DatasetEnvironmentType.OUTDOOR,
+        crop_bottom_px=0,
+        image_scale=1.0,
+        image_size=None,
+    ):
+        super().__init__(
+            path,
+            name,
+            sensor_type,
+            10,
+            None,
+            start_frame_id,
+            type,
+            environment_type=environment_type,
+        )
+        if sensor_type != SensorType.MONOCULAR:
+            raise ValueError("Boreas dataset only supports MONOCULAR sensor type (single camera)")
+        self.scale_viewer_3d = 0.1
+        print("Processing BOREAS Sequence")
+        self.base_path = os.path.join(self.path, self.name, "camera")
+        self.listing, self.timestamps = boreas_camera_listing(self.base_path)
+        self.max_frame_id = len(self.listing)
+        self.num_frames = self.max_frame_id
+        if self.max_frame_id == 0:
+            raise IOError(f"No Boreas camera images were found in folder: {self.base_path}")
+        if self.max_frame_id > 1:
+            self.fps = 1.0 / float(np.median(np.diff(self.timestamps)))
+            self.Ts = 1.0 / self.fps
+        print(f"BoreasDataset: {self.max_frame_id} images, fps: {self.fps:.2f}")
+        self.crop_bottom_px = int(crop_bottom_px)
+        self.image_scale = float(image_scale)
+        if self.crop_bottom_px < 0 or self.image_scale <= 0:
+            raise ValueError(
+                f"BoreasDataset: invalid crop_bottom_px: {crop_bottom_px} or image_scale: {image_scale}"
+            )
+        if self.crop_bottom_px > 0 or self.image_scale != 1.0:
+            print(
+                f"BoreasDataset: crop_bottom_px: {self.crop_bottom_px}, image_scale: {self.image_scale}"
+            )
+        # NOTE: checked here since Dataset.getImageColor() swallows exceptions raised by getImage()
+        if image_size is not None:
+            img = cv2.imread(self.listing[0])
+            size = (img.shape[1], img.shape[0]) if img is not None else None
+            if img is not None:
+                img = self.preprocess_image(img)
+                size = (img.shape[1], img.shape[0])
+            if size != tuple(int(v) for v in image_size):
+                raise ValueError(
+                    f"BoreasDataset: preprocessed image size {size} does not match the camera settings "
+                    f"size {tuple(image_size)}: update Camera.width/height and intrinsics in the settings file"
+                )
+
+    def preprocess_image(self, img):
+        if self.crop_bottom_px > 0:
+            img = img[: img.shape[0] - self.crop_bottom_px]
+        if self.image_scale != 1.0:
+            img = cv2.resize(
+                img, None, fx=self.image_scale, fy=self.image_scale, interpolation=cv2.INTER_AREA
+            )
+        return img
+
+    def getImage(self, frame_id):
+        img = None
+        # NOTE: frame_id is already shifted by start_frame_id in Dataset.getImageColor()
+        if frame_id < self.max_frame_id:
+            img = cv2.imread(self.listing[frame_id])
+            self.is_ok = img is not None
+            if img is not None:
+                img = self.preprocess_image(img)
+            self._timestamp = float(self.timestamps[frame_id])
+            if frame_id + 1 < self.max_frame_id:
+                self._next_timestamp = float(self.timestamps[frame_id + 1])
+            else:
+                self._next_timestamp = self._timestamp + self.Ts
+        else:
+            self.is_ok = False
+            self._timestamp = None
+        return np.ascontiguousarray(img) if img is not None else None

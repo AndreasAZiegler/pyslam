@@ -53,6 +53,7 @@ kScaleSevenScenes = 1.0
 kScaleNeuralRGBD = 1.0
 kScaleRover = 1.0
 kScaleClio = 1.0
+kScaleBoreas = 1.0
 
 
 @register_class
@@ -70,6 +71,7 @@ class GroundTruthType(SerializableEnum):
     NEURAL_RGBD = 11
     ROVER = 12
     CLIO = 13
+    BOREAS = 14
 
 
 def groundtruth_factory(settings, cam_settings=None):
@@ -146,6 +148,10 @@ def groundtruth_factory(settings, cam_settings=None):
         associations = settings["associations"]
         return RoverGroundTruth(
             path, name, camera_name, associations, start_frame_id, type=GroundTruthType.ROVER
+        )
+    if type == "boreas":
+        return BoreasGroundTruth(
+            path, name, associations, start_frame_id, type=GroundTruthType.BOREAS
         )
     if type == "video" or type == "folder":
         if "groundtruth_file" in settings:
@@ -2047,3 +2053,94 @@ class RoverGroundTruth(GroundTruth):
         else:
             abs_scale = np.sqrt((x - x_prev) ** 2 + (y - y_prev) ** 2 + (z - z_prev) ** 2)
         return timestamp, x, y, z, qx, qy, qz, qw, abs_scale
+
+
+def boreas_rotation_enu_sensor(roll, pitch, heading):
+    """Rotation R_enu_sensor from Boreas applanix roll/pitch/heading [rad].
+
+    Same convention as pyboreas yawPitchRollToRot(): C_sensor_enu = Rz(heading) Ry(pitch) Rx(roll)
+    with active elementary rotations, hence R_enu_sensor = C_sensor_enu^T.
+    """
+    cr, sr = np.cos(roll), np.sin(roll)
+    cp, sp = np.cos(pitch), np.sin(pitch)
+    ch, sh = np.cos(heading), np.sin(heading)
+    Rx = np.array([[1, 0, 0], [0, cr, -sr], [0, sr, cr]])
+    Ry = np.array([[cp, 0, sp], [0, 1, 0], [-sp, 0, cp]])
+    Rz = np.array([[ch, -sh, 0], [sh, ch, 0], [0, 0, 1]])
+    return (Rz @ Ry @ Rx).T
+
+
+# Boreas dataset: https://www.boreas.utias.utoronto.ca/
+# Reads the camera poses from <base_path>/<name>/applanix/camera_poses.csv and associates them
+# with the images in <base_path>/<name>/camera/ (one GT line per image).
+class BoreasGroundTruth(GroundTruth):
+    def __init__(self, path, name, associations=None, start_frame_id=0, type=GroundTruthType.BOREAS):
+        super().__init__(path, name, associations, start_frame_id, type)
+        from .dataset import boreas_camera_listing
+
+        self.scale = kScaleBoreas
+        self.filename = os.path.join(path, name, "applanix", "camera_poses.csv")
+        if not os.path.isfile(self.filename):
+            error_message = (
+                f"ERROR: [BoreasGroundTruth] Groundtruth file not found: {self.filename}!"
+            )
+            Printer.red(error_message)
+            sys.exit(error_message)
+
+        # columns: GPSTime[us],easting,northing,altitude,vel_east,vel_north,vel_up,roll,pitch,heading,...
+        raw = np.loadtxt(self.filename, delimiter=",", skiprows=1, ndmin=2)
+        if raw.shape[0] == 0:
+            sys.exit("ERROR [BoreasGroundTruth] while reading groundtruth file!")
+        raw = raw[np.argsort(raw[:, 0])]
+        gt_timestamps = raw[:, 0] * 1e-6
+
+        # associate each image with its closest GT sample (Boreas provides one pose per image)
+        _, image_timestamps = boreas_camera_listing(os.path.join(path, name, "camera"))
+        if len(image_timestamps) > 0:
+            idx = np.clip(np.searchsorted(gt_timestamps, image_timestamps), 1, len(gt_timestamps) - 1)
+            idx_prev = idx - 1
+            use_prev = np.abs(image_timestamps - gt_timestamps[idx_prev]) < np.abs(
+                gt_timestamps[idx] - image_timestamps
+            )
+            idx = np.where(use_prev, idx_prev, idx) if len(gt_timestamps) > 1 else np.zeros_like(idx)
+            max_dt = np.max(np.abs(gt_timestamps[idx] - image_timestamps))
+            if max_dt > 0.01:
+                Printer.orange(
+                    f"WARNING: [BoreasGroundTruth] max image-to-groundtruth time offset: {max_dt:.4f} s"
+                )
+            raw = raw[idx]
+            timestamps = image_timestamps
+        else:
+            Printer.orange(
+                "WARNING: [BoreasGroundTruth] no camera images found, using all groundtruth samples"
+            )
+            timestamps = gt_timestamps
+
+        # data line: timestamp[s], x, y, z, qx, qy, qz, qw (pose T_enu_camera)
+        self.data = np.zeros((raw.shape[0], 8), dtype=np.float64)
+        self.data[:, 0] = timestamps
+        self.data[:, 1:4] = raw[:, 1:4]
+        for i, row in enumerate(raw):
+            self.data[i, 4:8] = rotmat2qvec(boreas_rotation_enu_sensor(row[7], row[8], row[9]))
+        self.found = True
+
+    def getDataLine(self, frame_id):
+        return self.data[frame_id]
+
+    # return timestamp,x,y,z,scale
+    def getTimestampPositionAndAbsoluteScale(self, frame_id):
+        timestamp, x, y, z, _, _, _, _, abs_scale = self.getTimestampPoseAndAbsoluteScale(frame_id)
+        return timestamp, x, y, z, abs_scale
+
+    # return timestamp, x,y,z, qx,qy,qz,qw, scale
+    def getTimestampPoseAndAbsoluteScale(self, frame_id):
+        frame_id += self.start_frame_id
+        ss = self.getDataLine(frame_id)
+        timestamp = float(ss[0])
+        x, y, z = self.scale * ss[1:4]
+        qx, qy, qz, qw = (float(v) for v in ss[4:8])
+        if frame_id > 0:
+            abs_scale = self.scale * float(np.linalg.norm(ss[1:4] - self.getDataLine(frame_id - 1)[1:4]))
+        else:
+            abs_scale = 1
+        return timestamp, float(x), float(y), float(z), qx, qy, qz, qw, abs_scale

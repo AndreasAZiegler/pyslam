@@ -119,6 +119,7 @@ See the demo **video** for release v2.10.0
       - [7 Scenes dataset](#7-scenes-dataset)
       - [Neural RGBD dataset](#neural-rgbd-dataset)
       - [Rover dataset](#rover-dataset)
+      - [Boreas dataset](#boreas-dataset)
       - [ScanNet Datasets](#scannet-datasets)
       - [CLIO Datasets](#clio-datasets)
       - [ROS1 bags](#ros1-bags)
@@ -961,6 +962,7 @@ The following datasets are supported:
 | [SEVEN_SCENES dataset](https://www.microsoft.com/en-us/research/project/rgb-d-dataset-7-scenes/)                                             | `type: SEVEN_SCENES_DATASET` |
 | [NEURAL_RGBD dataset](https://github.com/dazinovic/neural-rgbd-surface-reconstruction)                                                       | `type: NEURAL_RGBD_DATASET`  |
 | [ROVER dataset](https://iis-esslingen.github.io/rover/)                                                                                      | `type: NEURAL_RGBD_DATASET`  |
+| [BOREAS dataset](https://www.boreas.utias.utoronto.ca/)                                                                                      | `type: BOREAS_DATASET`       |
 | [ScanNet dataset](http://www.scan-net.org/)                                                                                                  | `type: SCANNET_DATASET`      |
 | [CLIO dataset](https://github.com/MIT-SPARK/Clio)                                                                                            | `type: CLIO_DATASET`         |
 | [ROS1  bags](https://wiki.ros.org/Bags)                                                                                                      | `type: ROS1BAG_DATASET`      |
@@ -1040,6 +1042,14 @@ To download the dataset follow the instructions at https://github.com/dazinovic/
 #### Rover dataset 
 
 To download the dataset follow the instructions at https://iis-esslingen.github.io/rover/. Select the section `ROVER_DATASET: settings:` in the file `config.yaml`. A calibration file for the `d435i` camera is already available: `settings/ROVER_d435i.yaml`. Other camera models will be supported in the future.
+
+#### Boreas dataset 
+
+To download a sequence follow the instructions at https://www.boreas.utias.utoronto.ca/. pySLAM needs the `camera`, `applanix` and `calib` folders of the sequence, e.g.:
+```bash
+aws s3 sync s3://boreas/boreas-2024-12-05-14-12 ./boreas-2024-12-05-14-12 --exclude "*" --include "camera/*" --include "applanix/*" --include "calib/*" --no-sign-request
+```
+Select the section `BOREAS_DATASET: settings:` in the file `config.yaml` and set `base_path` to the folder containing the sequence and `name` to the sequence name. The camera images are read from `camera/` (their filenames are timestamps in microseconds) and the ground truth camera poses from `applanix/camera_poses.csv`. Boreas has a single camera, so only `sensor_type: mono` is supported. A calibration file for the full-resolution camera (from `calib/camera0_intrinsics.yaml`) is available: `settings/Boreas.yaml`.
 
 #### ScanNet Datasets
 
